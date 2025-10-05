@@ -1,0 +1,70 @@
+name: Clear Notebook Output ✨
+
+# This workflow runs on any push to the main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  clear-notebook-output:
+    # This condition prevents the workflow from running in an infinite loop.
+    # It checks if the commit message contains '[skip ci]'.
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch the entire history to compare commits
+          fetch-depth: 0
+
+      # 2. Set up the Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # 3. Install the necessary Python packages
+      - name: Install Dependencies
+        run: pip install jupyter nbconvert
+
+      # 4. Find newly added notebooks and clear their output
+      - name: Clear Output of New Notebooks
+        run: |
+          # Find files that were ADDED in the last commit and end with .ipynb
+          # The `|| true` prevents the script from failing if no notebooks are found
+          ADDED_NOTEBOOKS=$(git diff --name-only --diff-filter=A HEAD~1 HEAD | grep '\.ipynb$' || true)
+
+          if [[ -n "$ADDED_NOTEBOOKS" ]]; then
+            echo "Found new notebooks to clear:"
+            echo "$ADDED_NOTEBOOKS"
+            # Run nbconvert on all found notebooks to clear their output in place
+            echo "$ADDED_NOTEBOOKS" | xargs -r jupyter nbconvert --clear-output --inplace
+          else
+            echo "No new notebooks to process."
+          fi
+
+      # 5. Commit the changes back to the repository
+      - name: Commit and Push Cleared Notebooks
+        run: |
+          # Configure git with the bot's credentials
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Check if there are any changes to commit
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          echo "Committing cleared notebook outputs..."
+          # Add all modified files (the notebooks that were just cleared)
+          git add .
+          # Commit the changes with a special message to prevent re-triggering the workflow
+          git commit -m "chore: ✨ clear notebook output [skip ci]"
+          # Push the changes to the main branch
+          git push
